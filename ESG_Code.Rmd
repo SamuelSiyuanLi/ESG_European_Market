@@ -1,0 +1,193 @@
+---
+title: "KROLLFINALATTEMPT"
+output: pdf_document
+date: "2023-12-10"
+---
+
+# Libraries Used
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(plm)
+```
+
+# DATA SETS CREATED FOR ANALYSIS
+
+```{r ORIGINAL DATA (UPLOAD YOUR PATHING HERE)}
+original_data <- read_excel("Kroll-dataset19thOct2023.xlsx")
+```
+
+```{r dataset without binary variables ALL CONTINUOUS}
+# Identify non-binary and non-string columns
+non_binary_string_columns <- sapply(original_data, function(col) {
+  !is.logical(col) && !is.character(col) && length(unique(col)) > 2
+})
+
+# Create a new data frame without binary and string columns
+continuous_data <- original_data %>%
+  select(which(non_binary_string_columns))
+
+# Print the new data frame
+print(continuous_data)
+```
+
+```{r scaling continuous_data}
+# Specify the columns to exclude from scaling
+exclude_columns <- c("id", "YEAR", "ROA")
+
+# Select numeric columns (excluding the ones to be excluded)
+cols_to_scale <- setdiff(names(continuous_data), exclude_columns)
+
+# Scale the selected columns
+s.continuous_data <- continuous_data
+s.continuous_data[, cols_to_scale] <- scale(continuous_data[, cols_to_scale])
+
+# Print the scaled data
+print(s.continuous_data)
+s.continous_data <- scale(continuous_data, )
+```
+
+```{r}
+columns_to_remove <- c("ROE", "StockPrice")
+
+# Remove the specified columns
+s.continuous_data_ROA <- s.continuous_data[, !(names(s.continuous_data) %in% columns_to_remove)]
+
+# Print the modified data frame
+print(s.continuous_data_ROA)
+```
+
+```{r creation of the training and testing dataset}
+
+# Create a training dataset (excluding rows with YEAR = 2021)
+training_data <- subset(s.continuous_data_ROA, YEAR != 2021)
+
+# Create a testing dataset (only rows with YEAR = 2021)
+testing_data <- subset(s.continuous_data_ROA, YEAR == 2021)
+
+# Print the dimensions of the training and testing datasets
+cat("Training Data Dimensions:", dim(training_data), "\n")
+cat("Testing Data Dimensions:", dim(testing_data), "\n")
+```
+
+```{r if we consider removing 2020 from the model entirely...}
+##training_data <- subset(df, !(YEAR %in% c(2020, 2021)))
+```
+
+# EDA
+
+```{r ROA vs YEAR (overlay Company)}
+ggplot(original_data, aes(x = YEAR, y = ROA, color = Company)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "ROA vs YEAR", x = "YEAR", y = "Return on Assets (ROA)") +
+  theme_minimal()
+```
+
+```{r CORRELATION MATRIX OF ALL CONTINUOUS VARIABLES FOR TRAINING DATA}
+# Create a correlation matrix
+correlation_matrix_continuous_data <- cor(training_data)
+
+# Print the correlation matrix
+print(correlation_matrix_continuous_data)
+
+```
+
+# DATA ANALYSIS
+
+```{r}
+# Find highly correlated pairs (correlation >= 0.8)
+highly_correlated_pairs <- which(correlation_matrix_continuous_data >= 0.8 & correlation_matrix_continuous_data < 1, arr.ind = TRUE)
+
+# Create a table of correlated pairs with their correlation values
+correlation_table_continuous_data <- data.frame(
+  Variable1 = rownames(correlation_matrix_continuous_data)[highly_correlated_pairs[, 1]],
+  Variable2 = colnames(correlation_matrix_continuous_data)[highly_correlated_pairs[, 2]],
+  Correlation = correlation_matrix_continuous_data[highly_correlated_pairs]
+)
+
+# Print the correlation table
+print(correlation_table_continuous_data)
+```
+
+```{r}
+
+# Convert panel data to pdata.frame
+pdata_panel_testing <- pdata.frame(testing_data, index = c("id", "YEAR"))
+pdata_panel <- pdata.frame(training_data, index = c("id", "YEAR"))
+
+# Example: Fixed effects model with binary predictor 'binary_variable'
+fixed_effects_model <- plm(ROA ~ .,  data = pdata_panel,  model = "within")
+
+INTERACTION_fixed_effects_model <-plm(ROA ~ . + ManagementScore*GovernancePillarScore + TOTALDEBT*ASSETSTOTAL + CASHGENERIC*TOTALDEBT + ASSETSTOTAL*CASHGENERIC + MARKETCAPITALIZATION*OPERATINGINCOME + BoardSizeLog*BoardSize+ CMA*HML + BIP*CMA,  data = pdata_panel, model = "within")
+# Print summary of the fixed effects model
+summary(fixed_effects_model)
+summary(INTERACTION_fixed_effects_model)
+```
+
+```{r}
+all_columns <- names(pdata_panel)
+# Create a formula by concatenating all variable names with a '+'
+formula_string <- paste(all_columns, collapse = " + ")
+
+# Print the formula string
+cat("Dependent_Variable ~", formula_string, "\n")
+```
+
+```{r ALL VARIABLES LISTED -- REMOVAL OF ID AND YEAR}
+#WITHOUT INTERACTION TERMS
+fixed_effects_model <- plm(ROA ~ GovernancePillarScore + ManagementScore + ShareholdersScore + CSRStrategyScore + EnvironmentPillarScore + SocialPillarScore + ESGControversiesScore + StockPriceWR + ASSETSTOTAL + TOTALDEBT + CAPITALEXPENDITURES + OPERATINGINCOME + CASHGENERIC + AssetsLog + Debt + CASH + BoardSize + BoardSizeLog + ValueCompensationPolicyBoardMemberCompensation + ValueBoardStructureIndependentBoardMembers + ValueBoardStructureBoardDiversity + ValueBoardStructureNonExecutiveBoardMembers + MARKETCAPITALIZATION + MARKETCAPITALIZATIONWR + STKOPTIONCOMPENSATIONEXPNSE + MktRF + SMB + HML + RMW + CMA + RF + BMG + EnvironmentalInnovationScore + EmissionsScore + Lev + Scope1log + CI + BIP + CashLOG + ScopeYoY + RDR + RD,  data = pdata_panel,  model = "within")
+#WITH INTERACTION TERMS
+INTERACTION_fixed_effects_model <-plm(ROA ~  GovernancePillarScore + ManagementScore + ShareholdersScore + CSRStrategyScore + EnvironmentPillarScore + SocialPillarScore + ESGControversiesScore + StockPriceWR + ASSETSTOTAL + TOTALDEBT + CAPITALEXPENDITURES + OPERATINGINCOME + CASHGENERIC + AssetsLog + Debt + CASH + BoardSize + BoardSizeLog + ValueCompensationPolicyBoardMemberCompensation + ValueBoardStructureIndependentBoardMembers + ValueBoardStructureBoardDiversity + ValueBoardStructureNonExecutiveBoardMembers + MARKETCAPITALIZATION + MARKETCAPITALIZATIONWR + STKOPTIONCOMPENSATIONEXPNSE + MktRF + SMB + HML + RMW + CMA + RF + BMG + EnvironmentalInnovationScore + EmissionsScore + Lev + Scope1log + CI + BIP + CashLOG + ScopeYoY + RDR + RD + ManagementScore*GovernancePillarScore + TOTALDEBT*ASSETSTOTAL + CASHGENERIC*TOTALDEBT + ASSETSTOTAL*CASHGENERIC + MARKETCAPITALIZATION*OPERATINGINCOME + BoardSizeLog*BoardSize+ CMA*HML + BIP*CMA,  data = pdata_panel, model = "within")
+# Print summary of the fixed effects model
+summary(fixed_effects_model)
+summary(INTERACTION_fixed_effects_model)
+```
+
+```{r BEST MODEL WITH INTERACTION TERMS}
+#WITH INTERACTION TERMS
+INTERACTION_fixed_effects_model <-plm(ROA ~  GovernancePillarScore + ManagementScore + ShareholdersScore + CSRStrategyScore + EnvironmentPillarScore   + StockPriceWR + ASSETSTOTAL  + OPERATINGINCOME  + AssetsLog  + BoardSize + BoardSizeLog    + ValueBoardStructureNonExecutiveBoardMembers + MARKETCAPITALIZATION   + SMB  + RMW + CMA  +EnvironmentalInnovationScore  + EmissionsScore + Lev +CI  + BIP   + RDR + RD  + MARKETCAPITALIZATION*OPERATINGINCOME  ,  data = pdata_panel, model = "within")
+# Print summary of the fixed effects model
+summary(INTERACTION_fixed_effects_model)
+#R-adjusted = 0.38378
+```
+
+```{r BEST MODEL W/INTERACTION AND KEEP ALL ESGA }
+#WITH INTERACTION TERMS
+ALLESG_INTERACTION_fixed_effects_model <-plm(ROA ~  GovernancePillarScore + ManagementScore + ShareholdersScore + CSRStrategyScore + EnvironmentPillarScore + SocialPillarScore  + StockPriceWR + ASSETSTOTAL + TOTALDEBT  + OPERATINGINCOME  + AssetsLog + Debt  + BoardSize + BoardSizeLog   + ValueBoardStructureNonExecutiveBoardMembers + MARKETCAPITALIZATION + MARKETCAPITALIZATIONWR   + SMB  + RMW + CMA   + EnvironmentalInnovationScore + EmissionsScore + Lev  + CI + BIP   + RDR + RD  + MARKETCAPITALIZATION*OPERATINGINCOME  ,  data = pdata_panel, model = "within")
+# Print summary of the fixed effects model
+summary(ALLESG_INTERACTION_fixed_effects_model)
+#R-adjusted = 0.38004
+###NOT THE BEST MODEL, BUT ITS HERE IF WE WANT TO KEEP ALL ESGS
+```
+
+# Evaluating Performance using 2021 Data
+
+```{r}
+predictions <- predict(INTERACTION_fixed_effects_model, newdata = pdata_panel_testing)
+# Assuming 'response' is the actual response variable values in the testing data
+true_values <- testing_data$ROA
+
+residuals <- true_values - predictions
+mae <- mean(abs(residuals))
+mse <- mean(residuals^2)
+rmse <- sqrt(mse)
+print(residuals)
+print(mae)
+print(mse)
+print(rmse)
+```
+
+```{r}
+qqnorm(residuals)
+qqline(residuals)
+```
+
+```{r}
+plot(x = true_values, y = residuals, main = "Residual Plot", xlab = "Predicted Values", ylab = "Residuals", pch = 16, col = "blue")
+abline(h = 0, lty = 2, col = "red")  # Add a horizontal line at y = 0
+```
